@@ -1,6 +1,6 @@
 from django.db import models
 
-from backend.apps.projects.models import Project, Version
+from apps.projects.models import Project, Version
 
 
 class UserFeedback(models.Model):

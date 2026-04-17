@@ -1,5 +1,7 @@
 import { useState } from 'react';
+
 import { useApp, type FeedbackType } from '../context/AppContext';
+import { Button } from './ui/button';
 import {
   Dialog,
   DialogContent,
@@ -8,10 +10,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
-import { Button } from './ui/button';
 import { Label } from './ui/label';
-import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Textarea } from './ui/textarea';
 
 interface FeedbackDialogProps {
   open: boolean;
@@ -21,24 +22,37 @@ interface FeedbackDialogProps {
 
 export function FeedbackDialog({ open, onOpenChange, versionId }: FeedbackDialogProps) {
   const { addFeedback } = useApp();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [formData, setFormData] = useState({
     type: 'Erro' as FeedbackType,
     description: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    addFeedback({
-      versionId,
-      type: formData.type,
-      description: formData.description,
-      status: 'Aberto',
-    });
-    onOpenChange(false);
-    setFormData({
-      type: 'Erro',
-      description: '',
-    });
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      await addFeedback({
+        versionId,
+        type: formData.type,
+        description: formData.description,
+        status: 'Aberto',
+      });
+      onOpenChange(false);
+      setFormData({
+        type: 'Erro',
+        description: '',
+      });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Não foi possível registrar o feedback.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -72,19 +86,31 @@ export function FeedbackDialog({ open, onOpenChange, versionId }: FeedbackDialog
               <Textarea
                 id="description"
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                onChange={(event) =>
+                  setFormData({ ...formData, description: event.target.value })
+                }
                 placeholder="Descreva o erro ou sugestão..."
                 required
                 rows={4}
               />
             </div>
+            {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
               Cancelar
             </Button>
-            <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-              Registrar Feedback
+            <Button
+              type="submit"
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Registrando...' : 'Registrar Feedback'}
             </Button>
           </DialogFooter>
         </form>

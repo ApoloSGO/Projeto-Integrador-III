@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router';
 import { ChevronRight, FolderOpen } from 'lucide-react';
 
 export function Sidebar() {
-  const { projects } = useApp();
+  const { projects, isLoading } = useApp();
   const { projectId } = useParams();
 
   return (
@@ -15,6 +15,16 @@ export function Sidebar() {
         </div>
         
         <div className="space-y-2">
+          {isLoading && (
+            <div className="rounded-lg border border-dashed border-gray-200 p-4 text-sm text-gray-500">
+              Carregando projetos...
+            </div>
+          )}
+          {!isLoading && projects.length === 0 && (
+            <div className="rounded-lg border border-dashed border-gray-200 p-4 text-sm text-gray-500">
+              Nenhum projeto cadastrado ainda.
+            </div>
+          )}
           {projects.map((project) => (
             <Link
               key={project.id}

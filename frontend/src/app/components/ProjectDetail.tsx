@@ -3,8 +3,7 @@ import { useApp } from '../context/AppContext';
 import { useState } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Badge } from './ui/badge';
-import { Plus, Search, GitBranch, Clock, CheckCircle2, MessageSquare } from 'lucide-react';
+import { Plus, Search, GitBranch } from 'lucide-react';
 import { NewVersionDialog } from './NewVersionDialog';
 import { VersionCard } from './VersionCard';
 import { ProjectErrors } from './ProjectErrors';
@@ -12,12 +11,16 @@ import type { VersionStatus } from '../context/AppContext';
 
 export function ProjectDetail() {
   const { projectId } = useParams();
-  const { projects } = useApp();
+  const { projects, isLoading } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<VersionStatus | 'Todos'>('Todos');
   const [isNewVersionDialogOpen, setIsNewVersionDialogOpen] = useState(false);
 
   const project = projects.find(p => p.id === projectId);
+
+  if (isLoading) {
+    return <div className="p-8 text-gray-500">Carregando projeto...</div>;
+  }
 
   if (!project) {
     return <div className="p-8">Projeto não encontrado</div>;

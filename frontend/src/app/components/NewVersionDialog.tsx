@@ -23,6 +23,8 @@ interface NewVersionDialogProps {
 
 export function NewVersionDialog({ open, onOpenChange, projectId }: NewVersionDialogProps) {
   const { addVersion } = useApp();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [formData, setFormData] = useState({
     versionNumber: '',
     description: '',
@@ -30,23 +32,34 @@ export function NewVersionDialog({ open, onOpenChange, projectId }: NewVersionDi
     isReleased: false,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    addVersion({
-      projectId,
-      versionNumber: formData.versionNumber,
-      description: formData.description,
-      status: formData.status,
-      releaseDate: new Date(),
-      isReleased: formData.isReleased,
-    });
-    onOpenChange(false);
-    setFormData({
-      versionNumber: '',
-      description: '',
-      status: 'Alpha',
-      isReleased: false,
-    });
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      await addVersion({
+        projectId,
+        versionNumber: formData.versionNumber,
+        description: formData.description,
+        status: formData.status,
+        releaseDate: new Date(),
+        isReleased: formData.isReleased,
+      });
+      onOpenChange(false);
+      setFormData({
+        versionNumber: '',
+        description: '',
+        status: 'Alpha',
+        isReleased: false,
+      });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Não foi possível criar a versão.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -110,13 +123,21 @@ export function NewVersionDialog({ open, onOpenChange, projectId }: NewVersionDi
                 onCheckedChange={(checked) => setFormData({ ...formData, isReleased: checked })}
               />
             </div>
+            {errorMessage && (
+              <p className="text-sm text-red-600">{errorMessage}</p>
+            )}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
               Cancelar
             </Button>
-            <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-              Criar Versão
+            <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={isSubmitting}>
+              {isSubmitting ? 'Criando...' : 'Criar Versão'}
             </Button>
           </DialogFooter>
         </form>

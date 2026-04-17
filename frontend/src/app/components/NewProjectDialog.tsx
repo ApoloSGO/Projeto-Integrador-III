@@ -20,17 +20,30 @@ interface NewProjectDialogProps {
 
 export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) {
   const { addProject } = useApp();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     repositoryUrl: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    addProject(formData);
-    onOpenChange(false);
-    setFormData({ name: '', description: '', repositoryUrl: '' });
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      await addProject(formData);
+      onOpenChange(false);
+      setFormData({ name: '', description: '', repositoryUrl: '' });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Não foi possível criar o projeto.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -74,13 +87,21 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
                 placeholder="github.com/owner/repo"
               />
             </div>
+            {errorMessage && (
+              <p className="text-sm text-red-600">{errorMessage}</p>
+            )}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
               Cancelar
             </Button>
-            <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-              Criar Projeto
+            <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={isSubmitting}>
+              {isSubmitting ? 'Criando...' : 'Criar Projeto'}
             </Button>
           </DialogFooter>
         </form>

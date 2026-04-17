@@ -1,11 +1,14 @@
-import { useState, createContext, useContext, ReactNode } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useState } from "react";
 
-export type VersionStatus = 'Alpha' | 'Beta' | 'Estável';
-export type FeedbackType = 'Erro' | 'Sugestão';
-export type FeedbackStatus = 'Aberto' | 'Em Andamento' | 'Resolvido';
+import { dataApi, normalizeRepositoryUrl } from "../../services/api";
+
+export type VersionStatus = "Alpha" | "Beta" | "Estável";
+export type FeedbackType = "Erro" | "Sugestão";
+export type FeedbackStatus = "Aberto" | "Em Andamento" | "Resolvido";
 
 export interface Feedback {
   id: string;
+  projectId: string;
   versionId: string;
   type: FeedbackType;
   description: string;
@@ -35,122 +38,288 @@ export interface Project {
 interface AppContextType {
   projects: Project[];
   feedbacks: Feedback[];
-  addProject: (project: Omit<Project, 'id' | 'versions'>) => void;
-  addVersion: (version: Omit<Version, 'id'>) => void;
-  updateVersionStatus: (versionId: string, status: VersionStatus) => void;
-  addFeedback: (feedback: Omit<Feedback, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updateFeedbackStatus: (feedbackId: string, status: FeedbackStatus) => void;
+  isLoading: boolean;
+  error: string | null;
+  addProject: (project: Omit<Project, "id" | "versions">) => Promise<void>;
+  addVersion: (version: Omit<Version, "id">) => Promise<void>;
+  updateVersionStatus: (versionId: string, status: VersionStatus) => Promise<void>;
+  addFeedback: (feedback: Omit<Feedback, "id" | "createdAt" | "updatedAt" | "projectId">) => Promise<void>;
+  updateFeedbackStatus: (feedbackId: string, status: FeedbackStatus) => Promise<void>;
+  refreshData: () => Promise<void>;
+}
+
+interface ApiProject {
+  id: number;
+  name: string;
+  description: string;
+  repository_url: string;
+  versions: ApiVersion[];
+}
+
+interface ApiVersion {
+  id: number;
+  project: number;
+  tag: string;
+  title: string;
+  summary: string;
+  status: "planned" | "in_progress" | "released" | "archived";
+  release_date: string | null;
+  created_at: string;
+}
+
+interface ApiFeedback {
+  id: number;
+  project: number;
+  related_version: number | null;
+  feedback_type: "bug" | "suggestion" | "praise";
+  message: string;
+  status: "new" | "triaged" | "planned" | "resolved" | "dismissed";
+  created_at: string;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+function mapVersionStatus(status: ApiVersion["status"]): VersionStatus {
+  switch (status) {
+    case "in_progress":
+      return "Beta";
+    case "released":
+    case "archived":
+      return "Estável";
+    case "planned":
+    default:
+      return "Alpha";
+  }
+}
+
+function mapFeedbackType(type: ApiFeedback["feedback_type"]): FeedbackType {
+  return type === "bug" ? "Erro" : "Sugestão";
+}
+
+function mapFeedbackStatus(status: ApiFeedback["status"]): FeedbackStatus {
+  switch (status) {
+    case "triaged":
+    case "planned":
+      return "Em Andamento";
+    case "resolved":
+    case "dismissed":
+      return "Resolvido";
+    case "new":
+    default:
+      return "Aberto";
+  }
+}
+
+function toApiVersionStatus(status: VersionStatus): ApiVersion["status"] {
+  switch (status) {
+    case "Beta":
+      return "in_progress";
+    case "Estável":
+      return "released";
+    case "Alpha":
+    default:
+      return "planned";
+  }
+}
+
+function toApiFeedbackType(type: FeedbackType): ApiFeedback["feedback_type"] {
+  return type === "Erro" ? "bug" : "suggestion";
+}
+
+function toApiFeedbackStatus(status: FeedbackStatus): ApiFeedback["status"] {
+  switch (status) {
+    case "Em Andamento":
+      return "triaged";
+    case "Resolvido":
+      return "resolved";
+    case "Aberto":
+    default:
+      return "new";
+  }
+}
+
+function toDateInputValue(date: Date) {
+  return date.toISOString().split("T")[0];
+}
+
+function mapVersion(apiVersion: ApiVersion): Version {
+  const releaseDateSource = apiVersion.release_date || apiVersion.created_at;
+  const releaseDate = new Date(releaseDateSource);
+
+  return {
+    id: String(apiVersion.id),
+    projectId: String(apiVersion.project),
+    versionNumber: apiVersion.tag,
+    description: apiVersion.summary || apiVersion.title,
+    status: mapVersionStatus(apiVersion.status),
+    releaseDate,
+    isReleased: Boolean(apiVersion.release_date) || apiVersion.status === "released",
+  };
+}
+
+function mapProject(apiProject: ApiProject): Project {
+  const versions = (apiProject.versions || [])
+    .map(mapVersion)
+    .sort((first, second) => second.releaseDate.getTime() - first.releaseDate.getTime());
+
+  return {
+    id: String(apiProject.id),
+    name: apiProject.name,
+    description: apiProject.description,
+    repositoryUrl: apiProject.repository_url,
+    versions,
+  };
+}
+
+function mapFeedback(apiFeedback: ApiFeedback): Feedback {
+  const createdAt = new Date(apiFeedback.created_at);
+
+  return {
+    id: String(apiFeedback.id),
+    projectId: String(apiFeedback.project),
+    versionId: String(apiFeedback.related_version || ""),
+    type: mapFeedbackType(apiFeedback.feedback_type),
+    description: apiFeedback.message,
+    status: mapFeedbackStatus(apiFeedback.status),
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [projects, setProjects] = useState<Project[]>([
-    {
-      id: '1',
-      name: 'Sistema de Gestão ERP',
-      description: 'Software de gestão empresarial para pequenas empresas.',
-      repositoryUrl: 'github.com/owner/repo-erp',
-      versions: [
-        {
-          id: 'v1',
-          projectId: '1',
-          versionNumber: '1.3.0',
-          description: 'Adicionado gerenciamento de inventário e relatórios.',
-          status: 'Beta',
-          releaseDate: new Date('2026-02-15'),
-          isReleased: true,
-        },
-        {
-          id: 'v2',
-          projectId: '1',
-          versionNumber: '1.2.5',
-          description: 'Correções de bugs e melhorias de desempenho.',
-          status: 'Estável',
-          releaseDate: new Date('2026-01-10'),
-          isReleased: true,
-        },
-        {
-          id: 'v3',
-          projectId: '1',
-          versionNumber: '1.4.0',
-          description: 'Nova interface de dashboard com gráficos interativos.',
-          status: 'Alpha',
-          releaseDate: new Date('2026-03-20'),
-          isReleased: false,
-        },
-      ],
-    },
-  ]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [feedbacks, setFeedbacks] = useState<Feedback[]>([
-    {
-      id: 'f1',
-      versionId: 'v1',
-      type: 'Erro',
-      description: 'Erro ao gerar relatório de estoque quando há acentuação nos nomes.',
-      status: 'Em Andamento',
-      createdAt: new Date('2026-02-20'),
-      updatedAt: new Date('2026-02-22'),
-    },
-    {
-      id: 'f2',
-      versionId: 'v1',
-      type: 'Sugestão',
-      description: 'Adicionar opção de exportar relatórios em PDF.',
-      status: 'Aberto',
-      createdAt: new Date('2026-02-21'),
-      updatedAt: new Date('2026-02-21'),
-    },
-  ]);
+  const refreshData = async () => {
+    setIsLoading(true);
+    setError(null);
 
-  const addProject = (project: Omit<Project, 'id' | 'versions'>) => {
-    const newProject: Project = {
-      ...project,
-      id: Date.now().toString(),
-      versions: [],
-    };
-    setProjects([...projects, newProject]);
+    try {
+      const [projectsResponse, feedbacksResponse] = await Promise.all([
+        dataApi.getProjects(),
+        dataApi.getFeedbacks(),
+      ]);
+
+      setProjects((projectsResponse as ApiProject[]).map(mapProject));
+      setFeedbacks((feedbacksResponse as ApiFeedback[]).map(mapFeedback));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel carregar os dados.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const addVersion = (version: Omit<Version, 'id'>) => {
-    const newVersion: Version = {
-      ...version,
-      id: `v${Date.now()}`,
-    };
+  useEffect(() => {
+    void refreshData();
+  }, []);
 
-    setProjects(projects.map(project => 
-      project.id === version.projectId
-        ? { ...project, versions: [...project.versions, newVersion] }
-        : project
-    ));
+  const addProject = async (project: Omit<Project, "id" | "versions">) => {
+    const createdProject = (await dataApi.createProject({
+      name: project.name,
+      description: project.description,
+      repository_url: normalizeRepositoryUrl(project.repositoryUrl || ""),
+    })) as ApiProject;
+
+    setProjects((currentProjects) => [mapProject(createdProject), ...currentProjects]);
+    setError(null);
   };
 
-  const updateVersionStatus = (versionId: string, status: VersionStatus) => {
-    setProjects(projects.map(project => ({
-      ...project,
-      versions: project.versions.map(version =>
-        version.id === versionId ? { ...version, status } : version
+  const addVersion = async (version: Omit<Version, "id">) => {
+    const createdVersion = (await dataApi.createVersion({
+      project: Number(version.projectId),
+      tag: version.versionNumber,
+      title: `Versão ${version.versionNumber}`,
+      summary: version.description,
+      status: toApiVersionStatus(version.status),
+      release_date: version.isReleased ? toDateInputValue(version.releaseDate) : null,
+    })) as ApiVersion;
+
+    const mappedVersion = mapVersion(createdVersion);
+
+    setProjects((currentProjects) =>
+      currentProjects.map((project) =>
+        project.id === version.projectId
+          ? {
+              ...project,
+              versions: [...project.versions, mappedVersion].sort(
+                (first, second) => second.releaseDate.getTime() - first.releaseDate.getTime(),
+              ),
+            }
+          : project,
       ),
-    })));
+    );
+    setError(null);
   };
 
-  const addFeedback = (feedback: Omit<Feedback, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newFeedback: Feedback = {
-      ...feedback,
-      id: `f${Date.now()}`,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    setFeedbacks([...feedbacks, newFeedback]);
+  const updateVersionStatus = async (versionId: string, status: VersionStatus) => {
+    const currentVersion = projects
+      .flatMap((project) => project.versions)
+      .find((version) => version.id === versionId);
+
+    const versionReleaseDate =
+      currentVersion?.isReleased || status !== "Alpha"
+        ? currentVersion?.releaseDate || new Date()
+        : null;
+
+    const updatedVersion = (await dataApi.updateVersion(versionId, {
+      status: toApiVersionStatus(status),
+      release_date: versionReleaseDate ? toDateInputValue(versionReleaseDate) : null,
+    })) as ApiVersion;
+
+    const mappedVersion = mapVersion(updatedVersion);
+
+    setProjects((currentProjects) =>
+      currentProjects.map((project) => ({
+        ...project,
+        versions: project.versions
+          .map((version) => (version.id === versionId ? mappedVersion : version))
+          .sort((first, second) => second.releaseDate.getTime() - first.releaseDate.getTime()),
+      })),
+    );
+    setError(null);
   };
 
-  const updateFeedbackStatus = (feedbackId: string, status: FeedbackStatus) => {
-    setFeedbacks(feedbacks.map(feedback =>
-      feedback.id === feedbackId
-        ? { ...feedback, status, updatedAt: new Date() }
-        : feedback
-    ));
+  const addFeedback = async (
+    feedback: Omit<Feedback, "id" | "createdAt" | "updatedAt" | "projectId">,
+  ) => {
+    const matchingProject = projects.find((project) =>
+      project.versions.some((version) => version.id === feedback.versionId),
+    );
+    const matchingVersion = matchingProject?.versions.find(
+      (version) => version.id === feedback.versionId,
+    );
+
+    if (!matchingProject || !matchingVersion) {
+      throw new Error("Não foi possível identificar o projeto da versão selecionada.");
+    }
+
+    const createdFeedback = (await dataApi.createFeedback({
+      project: Number(matchingProject.id),
+      related_version: Number(feedback.versionId),
+      user_name: "Equipe interna",
+      feedback_type: toApiFeedbackType(feedback.type),
+      title: `${feedback.type} na versão ${matchingVersion.versionNumber}`,
+      message: feedback.description,
+      status: toApiFeedbackStatus(feedback.status),
+    })) as ApiFeedback;
+
+    setFeedbacks((currentFeedbacks) => [mapFeedback(createdFeedback), ...currentFeedbacks]);
+    setError(null);
+  };
+
+  const updateFeedbackStatus = async (feedbackId: string, status: FeedbackStatus) => {
+    const updatedFeedback = (await dataApi.updateFeedback(feedbackId, {
+      status: toApiFeedbackStatus(status),
+    })) as ApiFeedback;
+
+    const mappedFeedback = mapFeedback(updatedFeedback);
+
+    setFeedbacks((currentFeedbacks) =>
+      currentFeedbacks.map((feedback) => (feedback.id === feedbackId ? mappedFeedback : feedback)),
+    );
+    setError(null);
   };
 
   return (
@@ -158,11 +327,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       value={{
         projects,
         feedbacks,
+        isLoading,
+        error,
         addProject,
         addVersion,
         updateVersionStatus,
         addFeedback,
         updateFeedbackStatus,
+        refreshData,
       }}
     >
       {children}
@@ -172,8 +344,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
 export function useApp() {
   const context = useContext(AppContext);
+
   if (context === undefined) {
-    throw new Error('useApp must be used within an AppProvider');
+    throw new Error("useApp must be used within an AppProvider");
   }
+
   return context;
 }

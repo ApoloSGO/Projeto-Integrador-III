@@ -8,7 +8,7 @@ from .serializers import ChangelogItemSerializer, ProjectSerializer, VersionSeri
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
-    queryset = Project.objects.all().order_by("-created_at")
+    queryset = Project.objects.prefetch_related("versions__changelog").all().order_by("-created_at")
     serializer_class = ProjectSerializer
 
 
@@ -34,6 +34,8 @@ class ChangelogItemViewSet(viewsets.ModelViewSet):
 
 @api_view(["GET"])
 def dashboard_stats(_request):
+    from apps.feedback.models import UserFeedback
+
     totals = Version.objects.aggregate(
         total_versions=Count("id"),
         released_versions=Count("id", filter=Q(status="released")),
@@ -47,6 +49,6 @@ def dashboard_stats(_request):
             "total_versions": total_versions,
             "released_versions": released_versions,
             "pending_versions": total_versions - released_versions,
-            "total_feedbacks": 0,
+            "total_feedbacks": UserFeedback.objects.count(),
         }
     )

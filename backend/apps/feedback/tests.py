@@ -1,4 +1,4 @@
-from backend.apps.projects.models import Project
+from apps.projects.models import Project
 from rest_framework.test import APITestCase
 
 

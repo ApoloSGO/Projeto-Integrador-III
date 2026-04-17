@@ -1,5 +1,7 @@
 import { useState } from 'react';
+
 import { useApp, type VersionStatus } from '../context/AppContext';
+import { Button } from './ui/button';
 import {
   Dialog,
   DialogContent,
@@ -8,12 +10,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
-import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
+import { Textarea } from './ui/textarea';
 
 interface NewVersionDialogProps {
   open: boolean;
@@ -23,6 +24,8 @@ interface NewVersionDialogProps {
 
 export function NewVersionDialog({ open, onOpenChange, projectId }: NewVersionDialogProps) {
   const { addVersion } = useApp();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [formData, setFormData] = useState({
     versionNumber: '',
     description: '',
@@ -30,23 +33,34 @@ export function NewVersionDialog({ open, onOpenChange, projectId }: NewVersionDi
     isReleased: false,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    addVersion({
-      projectId,
-      versionNumber: formData.versionNumber,
-      description: formData.description,
-      status: formData.status,
-      releaseDate: new Date(),
-      isReleased: formData.isReleased,
-    });
-    onOpenChange(false);
-    setFormData({
-      versionNumber: '',
-      description: '',
-      status: 'Alpha',
-      isReleased: false,
-    });
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      await addVersion({
+        projectId,
+        versionNumber: formData.versionNumber,
+        description: formData.description,
+        status: formData.status,
+        releaseDate: new Date(),
+        isReleased: formData.isReleased,
+      });
+      onOpenChange(false);
+      setFormData({
+        versionNumber: '',
+        description: '',
+        status: 'Alpha',
+        isReleased: false,
+      });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Não foi possível criar a versão.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -54,9 +68,7 @@ export function NewVersionDialog({ open, onOpenChange, projectId }: NewVersionDi
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Nova Versão</DialogTitle>
-          <DialogDescription>
-            Adicione uma nova versão ao projeto.
-          </DialogDescription>
+          <DialogDescription>Adicione uma nova versão ao projeto.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="space-y-4 py-4">
@@ -65,7 +77,9 @@ export function NewVersionDialog({ open, onOpenChange, projectId }: NewVersionDi
               <Input
                 id="versionNumber"
                 value={formData.versionNumber}
-                onChange={(e) => setFormData({ ...formData, versionNumber: e.target.value })}
+                onChange={(event) =>
+                  setFormData({ ...formData, versionNumber: event.target.value })
+                }
                 placeholder="Ex: 1.3.0"
                 required
               />
@@ -75,7 +89,9 @@ export function NewVersionDialog({ open, onOpenChange, projectId }: NewVersionDi
               <Textarea
                 id="description"
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                onChange={(event) =>
+                  setFormData({ ...formData, description: event.target.value })
+                }
                 placeholder="Descreva o que mudou nesta versão..."
                 required
                 rows={3}
@@ -85,7 +101,9 @@ export function NewVersionDialog({ open, onOpenChange, projectId }: NewVersionDi
               <Label htmlFor="status">Status da Versão *</Label>
               <Select
                 value={formData.status}
-                onValueChange={(value) => setFormData({ ...formData, status: value as VersionStatus })}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, status: value as VersionStatus })
+                }
               >
                 <SelectTrigger id="status">
                   <SelectValue />
@@ -110,13 +128,19 @@ export function NewVersionDialog({ open, onOpenChange, projectId }: NewVersionDi
                 onCheckedChange={(checked) => setFormData({ ...formData, isReleased: checked })}
               />
             </div>
+            {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
               Cancelar
             </Button>
-            <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-              Criar Versão
+            <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={isSubmitting}>
+              {isSubmitting ? 'Criando...' : 'Criar Versão'}
             </Button>
           </DialogFooter>
         </form>

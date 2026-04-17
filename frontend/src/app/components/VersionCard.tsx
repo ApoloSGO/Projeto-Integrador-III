@@ -58,7 +58,10 @@ export function VersionCard({ version }: VersionCardProps) {
             <div className="flex items-center gap-6 text-sm">
               <div className="flex items-center gap-2 text-gray-500">
                 <Clock className="w-4 h-4" />
-                <span>Lançada em {format(version.releaseDate, "dd/MM/yyyy", { locale: ptBR })}</span>
+                <span>
+                  {version.isReleased ? 'Lançada em ' : 'Criada em '}
+                  {format(version.releaseDate, "dd/MM/yyyy", { locale: ptBR })}
+                </span>
               </div>
               <div className="flex items-center gap-2 text-gray-500">
                 <CheckCircle2 className="w-4 h-4" />

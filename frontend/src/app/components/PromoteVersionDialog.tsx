@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useApp, type Version, type VersionStatus } from '../context/AppContext';
 import {
   Dialog,
@@ -19,6 +20,8 @@ interface PromoteVersionDialogProps {
 
 export function PromoteVersionDialog({ open, onOpenChange, version }: PromoteVersionDialogProps) {
   const { updateVersionStatus, feedbacks } = useApp();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const getNextStatus = (): VersionStatus => {
     if (version.status === 'Alpha') return 'Beta';
@@ -33,8 +36,16 @@ export function PromoteVersionDialog({ open, onOpenChange, version }: PromoteVer
   const hasOpenFeedbacks = openFeedbacks.length > 0;
 
   const handlePromote = () => {
-    updateVersionStatus(version.id, nextStatus);
-    onOpenChange(false);
+    setIsSubmitting(true);
+    setErrorMessage('');
+    updateVersionStatus(version.id, nextStatus)
+      .then(() => onOpenChange(false))
+      .catch((error) =>
+        setErrorMessage(
+          error instanceof Error ? error.message : 'Não foi possível promover a versão.',
+        ),
+      )
+      .finally(() => setIsSubmitting(false));
   };
 
   return (
@@ -75,18 +86,27 @@ export function PromoteVersionDialog({ open, onOpenChange, version }: PromoteVer
               </p>
             )}
           </div>
+          {errorMessage && (
+            <p className="text-sm text-red-600">{errorMessage}</p>
+          )}
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isSubmitting}
+          >
             Cancelar
           </Button>
           <Button 
             onClick={handlePromote}
             className="bg-blue-600 hover:bg-blue-700"
+            disabled={isSubmitting}
           >
             <ArrowUpCircle className="w-4 h-4 mr-2" />
-            Promover para {nextStatus}
+            {isSubmitting ? 'Promovendo...' : `Promover para ${nextStatus}`}
           </Button>
         </DialogFooter>
       </DialogContent>

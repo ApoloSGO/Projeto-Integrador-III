@@ -45,3 +45,4 @@ class VersionTrackApiTests(APITestCase):
         self.assertEqual(stats_resp.status_code, 200)
         self.assertEqual(stats_resp.data["total_projects"], 1)
         self.assertEqual(stats_resp.data["released_versions"], 1)
+        self.assertEqual(stats_resp.data["total_feedbacks"], 0)
